@@ -1,0 +1,280 @@
+---
+title: "Covid-19"
+author: "*Natanael Soares Leite*"
+date: "22-03-2020"
+output: html_document
+---
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library(httr)
+library(readxl)
+library(gganimate)
+library(transformr)
+library(ggimage)
+library(dplyr)
+library(ggplot2)
+library(scales)
+library(RCurl)
+library(knitr)
+library(kableExtra)
+library(formattable)
+```
+
+`r text_spec("Dados", background = "#D7261E", color = "white", bold = T, font_size = 25)`
+
+Os dados aqui utilizados foram obtidos em:
+
+* `r text_spec("European Centre for Disease Prevention and Control", link = "https://www.ecdc.europa.eu/en/publications-data/download-todays-data-geographic-distribution-covid-19-cases-worldwide")`
+
+* `r text_spec("Ministério da Saúde", link = "http://tabnet.datasus.gov.br/cgi/tabcgi.exe?cnes/cnv/leiintbr.def")`
+
+
+`r text_spec("Mortalidade", background = "#D7261E", color = "white", bold = T, font_size = 25)`
+
+
+Atualizado: `r format(Sys.Date(), "%d-%m-%Y")`
+```{r, echo=FALSE, results=FALSE, warning=FALSE, message=FALSE}
+urlExists <- function(address) { 
+  tryCatch ({ 
+    con <- url(address) 
+    a <- capture.output(suppressWarnings(readLines(con)))
+    close(con)
+    TRUE;
+    },
+      error = function(err) { 
+      occur <- grep("cannot open the connection", capture.output(err)); 
+      if(length(occur) > 0) FALSE;
+    })
+}
+
+
+url1 = paste0("https://www.ecdc.europa.eu/sites/default/files/documents/COVID-19-geographic-disbtribution-worldwide-","2020-12-14",".xlsx") 
+
+url2 = paste0("https://www.ecdc.europa.eu/sites/default/files/documents/COVID-19-geographic-disbtribution-worldwide-","2020-12-14",".xls") 
+
+
+if (urlExists(url1)){
+  cat("xlsx file exists")
+  GET(url1, write_disk(tf <- tempfile(fileext = ".xlsx")))
+  df = read_xlsx(tf)
+} else
+
+if (urlExists(url2)){ 
+  cat("xls file exists") 
+  GET(url2, write_disk(tf <- tempfile(fileext = ".xls")))
+  df = read_excel(tf)
+}
+
+
+```
+
+### * Os 10 Países com maior taxa de mortalidade
+
+Atualizado: `r format(Sys.Date(), "%d-%m-%Y")`
+```{r, results=FALSE, fig.align="center", fig.width=9, echo=FALSE, align = "c"}
+library(DT)
+
+attach(df)
+
+#library(tidyverse)
+
+ if(exists("popData2018")){
+  cat("variável existe")
+  df <- df %>%
+    select(dateRep, day, month, year, cases, deaths, countriesAndTerritories, geoId, countryterritoryCode) %>% 
+    rename(., GeoId = geoId,
+           Cases = cases,
+           Deaths = deaths,
+           DateRep = dateRep,
+           `Countries and territories` = countriesAndTerritories)
+   }
+
+
+df %>% 
+    select_all() %>% 
+    arrange(.,GeoId, DateRep) %>% 
+    group_by(GeoId) %>% 
+    mutate(contcasos = cumsum(Cases),
+           contmorts = cumsum(Deaths),
+           txmort = (contmorts/contcasos)*100) %>%
+    group_by(desc(DateRep)) %>% 
+    arrange(desc(contmorts), .by_group = TRUE) %>% 
+    head(10) %>% 
+    ggplot(., aes(x=reorder(GeoId, txmort), y=txmort, label = as.character(digits(txmort,2)), fill=as.factor(txmort))) +
+    geom_bar(stat="identity") +
+    geom_text(nudge_y = -.35, color = "White", size = 5, fontface = "bold.italic") +
+    labs(x="País", y="Taxa de Mortalidade") +
+    coord_flip() +
+    scale_fill_grey(start = .8, end = .2) +
+    theme_minimal() +
+    theme(legend.position = "none")
+
+
+#cov19w10 <- cov19w[1:10,]
+#cov19w10 %>% 
+
+
+```
+
+
+### * Tabela detalhada dos dados de acordo com o total de mortos
+Atualizado: `r format(Sys.Date(), "%d-%m-%Y")`
+
+```{r,  echo=FALSE}
+cov19wt <- df %>% 
+  arrange(.,GeoId, DateRep) %>% 
+  group_by(GeoId) %>% 
+  mutate(contcasos = cumsum(Cases),
+         contmorts = cumsum(Deaths),
+         txmort = (contmorts/contcasos)*100) %>%
+  filter(DateRep == as.POSIXct.Date(Sys.Date())) %>% 
+  arrange(.,desc(DateRep), desc(contmorts)) %>%
+  mutate(`Tx. de Mortalidade` = round(txmort, 2),
+         `Países e Territórios` = gsub("_", " ", `Countries and territories`)) %>% 
+  select(`Países e Territórios`, GeoId, Cases, Deaths, contcasos, contmorts, `Tx. de Mortalidade`) %>% 
+  rename(`Novos Casos` = Cases,
+         `Novas Mortes` = Deaths,
+         `Total de Casos` = contcasos,
+         `Total de Mortes` = contmorts)
+
+cov19wt$nlinha <- 1:nrow(cov19wt)
+
+datatable(
+  cov19wt[,1:7], extensions = "Buttons", options = list(
+    dom = "Bfrtip",
+    buttons = c("copy", "csv", "excel", "pdf", "print")
+  )
+)
+
+#kable(cov19wt[,1:7]) %>%
+#  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F) %>%
+#  column_spec(5:7, bold = T) %>% 
+#  row_spec(as.numeric(cov19wt[grep("BR", cov19wt$GeoId),8]), bold = T, color = "white", background = "#D7261E") %>% 
+#  scroll_box(width = "100%", height = "400px")
+```
+ 
+<p>&nbsp;</p>
+##
+`r text_spec("Brasil", background = "#D7261E", color = "white", bold = T, font_size = 25)`
+
+
+Nessa seção serão apresentados alguns gráficos para que possamos entender melhor o cenário que enfrentamos.
+
+Atualizado: `r format(Sys.Date(), "%d-%m-%Y")`
+```{r pressure, echo=FALSE}
+p <- df %>%
+  filter(GeoId == "BR") %>% 
+  arrange(.,GeoId, DateRep) %>% 
+  mutate(contcasos = cumsum(Cases),
+         contmorts = cumsum(Deaths),
+         txmort = contmorts/contcasos) %>% 
+  ggplot(., aes(x=DateRep, color=GeoId)) +
+  #geom_line(aes(y=contmorts), size=1.5, color="Blue") +
+  geom_line(aes(y=contcasos), size=1.5) +
+  scale_x_datetime(labels = date_format("%d/%b"), breaks = "1 week") +
+  theme_minimal() +
+  theme(legend.position="none",
+        axis.text.x = element_text(color = "grey10", size = 15, angle=45, hjust=1),
+        axis.text.y = element_text(color = "grey10", size = 15),
+        axis.title.x = element_text(color = "grey10", size = 18),
+        axis.title.y = element_text(color = "grey10", size = 18),
+        plot.title = element_text(hjust = 0.5, size = 15, face = "bold"),
+        plot.caption = element_text(face = "italic")) +
+  #scale_x_date(format = "%Y-%m-%d") +
+  labs(title = "Brasil - Evolução do Número de Casos", 
+       subtitle = "Dia: {frame_along}",
+       x = "Dia/Mês",
+       y = "Casos confirmados",
+       caption = "Fonte: https://www.ecdc.europa.eu/en/publications-data/download-todays-data-geographic-distribution-covid-19-cases-worldwide") +
+  geom_point(aes(y=contcasos), size=3.5) +
+  transition_reveal(DateRep) 
+  animate(p, nframes = 200, fps = 12, end_pause = 10, height = 500, width =900)
+
+```
+
+`r text_spec("Comparação", background = "#D7261E", color = "white", bold = T, font_size = 25)`
+
+Atualizado: `r format(Sys.Date(), "%d-%m-%Y")`
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+library(plyr) # gera comflito com o dplyr
+
+dir <- 'C:/Users/natan/Downloads/covidAnimation/covidAnimation/'
+
+
+brasil <- df %>% 
+  filter(countriesAndTerritories=='Brazil') %>% 
+  arrange(DateRep) %>%
+  slice(which(Cases>0)[1]:length(DateRep)) %>% 
+  mutate(dia=1:length(DateRep),brasil=Cases) %>% 
+  select(dia,brasil)
+
+italia <- df %>% 
+  filter(countriesAndTerritories=='Italy') %>% 
+  arrange(DateRep) %>%
+  slice(which(Cases>0)[1]:length(DateRep)) %>%  
+  mutate(dia=1:length(DateRep),italia=Cases) %>% 
+  select(dia,italia)
+
+eua <- df %>% 
+  filter(countryterritoryCode=='USA') %>% 
+  arrange(DateRep) %>%
+  slice(which(Cases>0)[1]:length(DateRep)) %>%  
+  mutate(dia=1:length(DateRep),USA=Cases) %>% 
+  select(dia,USA)
+
+juntos <- join(brasil,italia,by="dia") %>%
+  join(eua,by="dia")
+
+paises <- data.frame(
+  brasil = 'figs/brasil.png',
+  italia = 'figs/italia.png',
+  iran   = 'figs/eu-corri.png',
+  eua    = 'figs/eua.png'
+)
+
+p <- ggplot(juntos,aes(x=dia,y=italia))+
+  geom_path(col="#00AFBB",lwd=1.5)+
+  geom_image(aes(col=NULL),image=paste0(dir,paises$italia))+
+  geom_path(aes(y=brasil),col="#E7B800",lwd=1.5)+
+  geom_image(aes(y=brasil,col=NULL),image=paste0(dir,paises$brasil))+
+  geom_path(aes(y=USA),col="#FC4E07",lwd=1.5)+
+  geom_image(aes(y=USA,col=NULL),image=paste0(dir,paises$eua))+
+  #scale_y_continuous(trans = "log10") +
+  labs(x='Dias após primeiro registro do Covid-19',
+       y="Número de Casos",
+       color=NULL)+
+  transition_reveal(dia)+
+  theme_minimal()+
+  theme(legend.position = "top",
+        plot.title = element_text(size = 15, face = "bold"),
+        axis.text.x = element_text(color = "grey10", size = 15),
+        axis.text.y = element_text(color = "grey10", size = 15),
+        axis.title.x = element_text(color = "grey10", size = 18),
+        axis.title.y = element_text(color = "grey10", size = 18))+
+  geom_image(aes(x=1,y = 1450),image=paste0(dir,paises$italia))+
+  geom_image(aes(x=1,y = 1325),image=paste0(dir,paises$brasil))+
+  geom_image(aes(x=1,y = 1200),image=paste0(dir,paises$eua))+
+  labs(title = "COVID-19", 
+       subtitle = "Dia: {frame_along}",
+       caption = "Fonte: https://www.ecdc.europa.eu/en/publications-data/download-todays-data-geographic-distribution-covid-19-cases-worldwide")
+
+
+
+annotation <- data.frame(
+  # x = rep(3,2),
+  x = c(3,3,4.3),
+  y = c(1450,1325,1200),
+  label = c("Itália", "Brasil","Estados Unidos")
+)
+
+
+p <- p+geom_text(data=annotation, aes( x=x, y=y, label=label), 
+                 color="gray10", 
+                 size=5 )
+
+
+animate(p, nframes = 200, fps = 12, end_pause = 10, height = 500, width =900)
+
+```
